@@ -344,8 +344,8 @@ export default function Home() {
       </section>
 
       <footer className="site-footer">
-        <div className="footer-top"><a className="wordmark" href="#">ATELIER<span>.</span></a><p>Designed with intention.<br /><i>Worn your way.</i></p><nav><a href="#collection">SHOP THE EDIT</a><a href="#story">OUR STORY</a><a href="#privacy">PRIVACY &amp; AI</a><details className="footer-privacy" id="privacy"><summary>HOW TRY-ON USES YOUR PHOTO</summary><p>Your photo is sent to FASHN to generate the preview. This app does not save it; provider-side copies follow FASHN’s retention policy.</p></details></nav></div>
-        <div className="footer-bottom"><span>© ATELIER 2026</span><span>COMPLIMENTARY SHIPPING OVER $250</span><span>AI PREVIEWS PROCESSED PRIVATELY BY FASHN</span></div>
+        <div className="footer-top"><a className="wordmark" href="#">ATELIER<span>.</span></a><p>Designed with intention.<br /><i>Worn your way.</i></p><nav><a href="#collection">SHOP THE EDIT</a><a href="#story">OUR STORY</a><a href="#privacy">PRIVACY &amp; AI</a><details className="footer-privacy" id="privacy"><summary>HOW TRY-ON USES YOUR PHOTO</summary><p>Your photo is sent through our server to FASHN VTON 1.5 running in a temporary Colab runtime. The application does not save uploads to a database, though Colab may temporarily buffer files during processing.</p></details></nav></div>
+        <div className="footer-bottom"><span>© ATELIER 2026</span><span>COMPLIMENTARY SHIPPING OVER $250</span><span>AI PREVIEWS GENERATED WITH FASHN VTON 1.5</span></div>
       </footer>
 
       {(modalOpen || Boolean(queryProduct)) && (
@@ -409,8 +409,8 @@ export default function Home() {
                 )}
                 <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} hidden />
                 <div className="photo-guidance"><span>✳</span><p><strong>For the best results, upload a clear, front-facing, full-body photograph with good lighting.</strong><br />Stand naturally against a simple background for the most realistic preview.</p></div>
-                <label className="consent-row"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I agree to send my photo to FASHN AI for processing. We don’t store it, but FASHN’s own retention policy applies. It is never posted publicly. <a href="#privacy">Privacy details</a></span></label>
-                <details className="privacy-details" id="privacy-modal"><summary>How your photo is used</summary><p>Your photo is sent to FASHN to create this preview. Our server processes it in memory and does not save it. The generated preview is returned privately to your browser. The AI provider may retain its processing copies under its own policy; deleting here clears your browser preview but cannot delete the provider’s copy.</p></details>
+                <label className="consent-row"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I agree to send my photo through our server to FASHN VTON 1.5 running in Colab. The photo is used to generate a preview and may be temporarily buffered in the Colab runtime. It is never posted publicly. <a href="#privacy">Privacy details</a></span></label>
+                <details className="privacy-details" id="privacy-modal"><summary>How your photo is used</summary><p>Your photo is sent through our server to the FASHN VTON 1.5 service running in a temporary Colab runtime. The application does not save uploaded photos or generated previews to a database. Colab may temporarily buffer request files while processing. Deleting here clears the browser preview; it cannot clear data already temporarily buffered by the runtime.</p></details>
                 {error && <p className="tryon-error" role="alert">{error}</p>}
                 {state === "processing" ? (
                   <div className="processing-state"><div className="processing-orbit"><Icon name="sparkle" size={22} /></div><strong>{status}</strong><span>This usually takes under a minute. Please keep this window open.</span><div className="progress-track"><i /></div></div>
@@ -418,7 +418,7 @@ export default function Home() {
                   <button className="generate-button" disabled={!photo || !consent} onClick={submitTryOn}><Icon name="sparkle" size={18} /> GENERATE MY PREVIEW <Icon name="arrow" size={18} /></button>
                 )}
                 {state === "error" && <button className="retry-button" onClick={submitTryOn}>TRY AGAIN</button>}
-                <div className="privacy-footnote"><Icon name="lock" size={14} /> Delete clears your images from this browser. Provider copies follow FASHN’s retention policy.</div>
+                <div className="privacy-footnote"><Icon name="lock" size={14} /> Delete clears the browser preview. Colab may temporarily buffer request files during processing.</div>
               </>
             )}
             <p className="modal-bottom-note">AI styling preview only. Results may vary and do not represent actual fit or sizing.</p>

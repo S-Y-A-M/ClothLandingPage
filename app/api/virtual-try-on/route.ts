@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_RESULT_SIZE = 15 * 1024 * 1024;
+const CATALOG_IMAGE_TIMEOUT_MS = 30_000;
+const COLAB_REQUEST_TIMEOUT_MS = 240_000;
+export const maxDuration = 300;
+
 const PRODUCT_CATALOG = {
   "atelier-oversized-blazer": {
     category: "tops",
@@ -29,11 +33,21 @@ const PRODUCT_CATALOG = {
   },
 } as const;
 
-type ProviderStatus = {
-  id?: string;
-  status?: string;
-  output?: string[] | null;
-  error?: string | null;
+const PRODUCT_GARMENT_PHOTO_TYPES = {
+  "atelier-oversized-blazer": "flat-lay",
+  "atelier-soft-structure": "model",
+  "atelier-modern-layer": "model",
+  "atelier-little-days": "model",
+} as const satisfies Record<keyof typeof PRODUCT_CATALOG, "flat-lay" | "model">;
+
+type ColabConfig = {
+  endpoint: string;
+  token: string;
+};
+
+type CatalogImage = {
+  bytes: Buffer;
+  contentType: string;
 };
 
 function json(body: object, status = 200) {
@@ -60,31 +74,40 @@ function isProductId(id: FormDataEntryValue | null): id is keyof typeof PRODUCT_
   return typeof id === "string" && Object.hasOwn(PRODUCT_CATALOG, id);
 }
 
-function isProviderImageUrl(value: unknown): value is string {
-  if (typeof value !== "string") return false;
+function getColabConfig(): ColabConfig | null {
+  const rawUrl = process.env.COLAB_VTON_URL;
+  const token = process.env.COLAB_VTON_API_TOKEN;
+  if (!rawUrl || !token || token.length < 32) return null;
+
   try {
-    const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password;
+    const baseUrl = new URL(rawUrl);
+    if (
+      baseUrl.protocol !== "https:" ||
+      baseUrl.username ||
+      baseUrl.password ||
+      baseUrl.search ||
+      baseUrl.hash
+    ) {
+      return null;
+    }
+    return {
+      endpoint: new URL("/virtual-try-on", baseUrl).toString(),
+      token,
+    };
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function getPrivateResultDataUrl(imageUrl: string) {
-  const response = await fetch(imageUrl, {
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(30_000),
-  });
-  const contentType = response.headers.get("content-type")?.split(";")[0].toLowerCase();
-  if (!response.ok || !contentType || !["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
-    throw new Error("The generated preview could not be retrieved. Please try again.");
+class ImagePayloadTooLargeError extends Error {}
+
+async function readBoundedResponse(response: Response, maxSize: number) {
+  const contentLengthHeader = response.headers.get("content-length");
+  const contentLength = contentLengthHeader === null ? NaN : Number(contentLengthHeader);
+  if (Number.isFinite(contentLength) && contentLength > maxSize) {
+    throw new ImagePayloadTooLargeError();
   }
-  const contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > MAX_RESULT_SIZE) {
-    throw new Error("The generated preview is too large to return securely.");
-  }
-  if (!response.body) throw new Error("The generated preview was empty. Please try again.");
+  if (!response.body) throw new Error("The image response was empty.");
 
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
@@ -93,56 +116,36 @@ async function getPrivateResultDataUrl(imageUrl: string) {
     const { done, value } = await reader.read();
     if (done) break;
     totalSize += value.byteLength;
-    if (totalSize > MAX_RESULT_SIZE) {
+    if (totalSize > maxSize) {
       await reader.cancel();
-      throw new Error("The generated preview is too large to return securely.");
+      throw new ImagePayloadTooLargeError();
     }
     chunks.push(Buffer.from(value));
   }
-  return `data:${contentType};base64,${Buffer.concat(chunks).toString("base64")}`;
+  return Buffer.concat(chunks);
 }
 
-async function providerRequest(path: string, init?: RequestInit) {
-  const apiKey = process.env.FASHN_API_KEY;
-  if (!apiKey) throw new Error("Virtual try-on is temporarily unavailable. Please try again later.");
+async function getCatalogImage(imageUrl: string): Promise<CatalogImage> {
+  const url = new URL(imageUrl);
+  if (url.protocol !== "https:" || url.hostname !== "images.unsplash.com" || url.username || url.password) {
+    throw new Error("The catalog image URL is invalid.");
+  }
 
-  const response = await fetch(`https://api.fashn.ai/v1/${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      ...(init?.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(60_000),
+  const response = await fetch(url, {
+    headers: { Accept: "image/jpeg, image/png, image/webp" },
+    signal: AbortSignal.timeout(CATALOG_IMAGE_TIMEOUT_MS),
     cache: "no-store",
+    redirect: "error",
   });
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403 || response.status >= 500) {
-      throw new Error("The AI fitting service is temporarily unavailable. Please try again later.");
-    }
-    throw new Error("The AI fitting service could not process this request.");
+  const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (!response.ok || !contentType || !["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+    throw new Error("The catalog image could not be retrieved.");
   }
-  return (await response.json()) as ProviderStatus;
-}
-
-async function formatProviderResult(result: ProviderStatus) {
-  if (result.status === "failed" || result.error) {
-    return json({ error: "We couldn't create your preview. Please try another photo or try again." }, 502);
+  const bytes = await readBoundedResponse(response, MAX_FILE_SIZE);
+  if (!hasValidImageSignature(bytes, contentType)) {
+    throw new Error("The catalog image data is invalid.");
   }
-  if (result.status === "completed") {
-    const imageUrl = result.output?.[0];
-    if (!isProviderImageUrl(imageUrl)) {
-      return json({ error: "The AI service returned an invalid preview. Please try again." }, 502);
-    }
-    try {
-      return json({ status: "completed", imageUrl: await getPrivateResultDataUrl(imageUrl) });
-    } catch {
-      return json({ error: "The generated preview could not be retrieved securely. Please try again." }, 502);
-    }
-  }
-  if (!result.id || !/^[A-Za-z0-9_-]{1,128}$/.test(result.id)) {
-    return json({ error: "The AI service returned an invalid processing status." }, 502);
-  }
-  return json({ status: "processing", jobId: result.id }, 202);
+  return { bytes, contentType };
 }
 
 export async function POST(request: NextRequest) {
@@ -150,8 +153,8 @@ export async function POST(request: NextRequest) {
   if (origin && origin !== request.nextUrl.origin) {
     return json({ error: "This request origin is not allowed." }, 403);
   }
-  const apiKey = process.env.FASHN_API_KEY;
-  if (!apiKey) {
+  const colab = getColabConfig();
+  if (!colab) {
     return json({ error: "Virtual try-on is not configured yet. Please check back soon." }, 503);
   }
   const contentLength = Number(request.headers.get("content-length"));
@@ -190,48 +193,90 @@ export async function POST(request: NextRequest) {
     return json({ error: "This image file appears to be damaged or mislabeled." }, 415);
   }
 
+  let garmentImage: CatalogImage;
   try {
-    const result = await providerRequest("run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model_name: "tryon-v1.6",
-        inputs: {
-          model_image: `data:${image.type};base64,${bytes.toString("base64")}`,
-          garment_image: product.image,
-          category: product.category,
-        },
-      }),
-    });
-    return await formatProviderResult(result);
+    garmentImage = await getCatalogImage(product.image);
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return json({
+      error: timedOut
+        ? "Retrieving the selected garment timed out. Please try again."
+        : "The selected garment image is temporarily unavailable.",
+    }, timedOut ? 504 : 502);
+  }
+
+  const upstreamForm = new FormData();
+  upstreamForm.append("person_image", image, "person-image");
+  upstreamForm.append(
+    "garment_image",
+    new Blob([new Uint8Array(garmentImage.bytes)], { type: garmentImage.contentType }),
+    "garment-image",
+  );
+  upstreamForm.append("category", product.category);
+  upstreamForm.append("garment_photo_type", PRODUCT_GARMENT_PHOTO_TYPES[productId]);
+
+  let response: Response;
+  try {
+    response = await fetch(colab.endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${colab.token}`,
+        Accept: "image/png",
+      },
+      body: upstreamForm,
+      signal: AbortSignal.timeout(COLAB_REQUEST_TIMEOUT_MS),
+      cache: "no-store",
+      redirect: "error",
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    console.error("Colab virtual try-on request failed.", error);
     return json({
       error: timedOut
         ? "The fitting is taking longer than expected. Please try again."
-        : error instanceof Error
-          ? error.message
-          : "The AI fitting service is temporarily unavailable.",
-    }, timedOut ? 504 : 502);
+        : "The AI fitting service is temporarily unavailable. Please try again later.",
+    }, timedOut ? 504 : 503);
   }
-}
 
-export async function GET(request: NextRequest) {
-  const jobId = request.nextUrl.searchParams.get("jobId");
-  if (!jobId || !/^[A-Za-z0-9_-]{1,128}$/.test(jobId)) {
-    return json({ error: "A valid processing ID is required." }, 400);
+  if (!response.ok) {
+    if (response.status === 429 || response.status === 503) {
+      return json({ error: "The AI fitting service is busy. Please try again shortly." }, 503);
+    }
+    if (response.status === 504) {
+      return json({ error: "The fitting is taking longer than expected. Please try again." }, 504);
+    }
+    if (response.status === 413) {
+      return json({ error: "The selected images exceed the fitting service's size limit." }, 413);
+    }
+    if (response.status === 401 || response.status === 403) {
+      console.error("Colab virtual try-on rejected the configured server token.");
+      return json({ error: "The AI fitting service is temporarily unavailable." }, 503);
+    }
+    return json({ error: "We couldn't create your preview. Please try again." }, 502);
   }
+
+  const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (contentType !== "image/png") {
+    return json({ error: "The AI service returned an invalid preview. Please try again." }, 502);
+  }
+
+  let resultBytes: Buffer;
   try {
-    const result = await providerRequest(`status/${encodeURIComponent(jobId)}`);
-    return await formatProviderResult(result);
+    resultBytes = await readBoundedResponse(response, MAX_RESULT_SIZE);
   } catch (error) {
-    const timedOut = error instanceof Error && error.name === "TimeoutError";
-    return json({
-      error: timedOut
-        ? "Checking the fitting status timed out. Please try again."
-        : error instanceof Error
-          ? error.message
-          : "The AI fitting service is temporarily unavailable.",
-    }, timedOut ? 504 : 502);
+    if (error instanceof ImagePayloadTooLargeError) {
+      return json({ error: "The generated preview is too large to return securely." }, 502);
+    }
+    console.error("Could not read the generated Colab preview.", error);
+    return json({ error: "The generated preview could not be retrieved securely." }, 502);
   }
+
+  if (!hasValidImageSignature(resultBytes, "image/png")) {
+    return json({ error: "The AI service returned an invalid preview. Please try again." }, 502);
+  }
+
+  return json({
+    status: "completed",
+    imageUrl: `data:image/png;base64,${resultBytes.toString("base64")}`,
+  });
 }

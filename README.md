@@ -27,16 +27,19 @@ Add browser-playable MP4 files at those paths to activate the additional panels.
 
 ## Configure virtual try-on
 
-The try-on uses FASHN AI's `tryon-v1.6` model. Set `FASHN_API_KEY` in the server environment (for local development, use an untracked `.env.local` file):
+The try-on uses the open-source FASHN VTON 1.5 model in your Google Colab GPU runtime. Start the existing FASHN setup, then run `fashn_vton_fastapi.ipynb` in that same runtime. The notebook starts an authenticated FastAPI service on port 8000 and provides cells to start and test a temporary Cloudflare Quick Tunnel.
+
+Copy the `https://...trycloudflare.com` URL printed by the notebook and set these **server-only** variables in the local `.env.local` file:
 
 ```text
-FASHN_API_KEY=your_server_side_key
+COLAB_VTON_URL=https://your-tunnel-url
+COLAB_VTON_API_TOKEN=your-random-shared-token
 ```
 
-Keep the key server-side; it is only read by `app/api/virtual-try-on/route.ts`. Without a key, the storefront remains usable and the try-on flow reports that processing is not configured. It does not generate a mock result.
+Generate a long random token and enter the same value at the notebook's hidden token prompt. Never use a `NEXT_PUBLIC_` prefix or commit the actual URL/token. `.env*` files are ignored by Git. Quick Tunnel URLs change when the tunnel or Colab runtime restarts; update `COLAB_VTON_URL` and restart the Next.js server after that happens. Colab is a temporary development environment, not permanent hosting. The paid hosted FASHN API is not used.
 
-The API accepts a `personImage` multipart file (JPEG, PNG, or WebP, up to 10 MB), `productId`, `category`, and `productColor`. The server validates the image signature and checks the product/category/color against its catalog before sending the photo and server-selected garment reference to FASHN. The reference image represents the selected product and color; it is deliberately resolved on the server rather than trusting a client-supplied image URL. Pending FASHN jobs are polled through the same endpoint. The API includes a same-origin check; production deployments should also apply their normal abuse controls and rate limits at the edge.
+The browser sends `personImage` (JPEG, PNG, or WebP, up to 10 MB), `productId`, `category`, and `productColor` to `app/api/virtual-try-on/route.ts`. The Next.js route retains the same-origin, image-signature, file-size, and catalog checks; it retrieves the selected garment image from the existing fixed catalog and sends both images to Colab as multipart data. On success it returns `{ "status": "completed", "imageUrl": "data:image/png;base64,..." }`, so the existing frontend can display the result without a design or response-contract change. The route does not expose the Colab URL or token to the browser. The current catalog marks the hanger image as `flat-lay` and the model-worn images as `model`.
 
-Uploaded bytes and the generated result are held in memory only and are not written to this application's disk or database. The server fetches the provider result and returns it as private, non-cacheable image data rather than exposing the provider's result URL. This app does not control provider-side retention or offer provider-side deletion; deleting the preview clears the local browser preview, while the provider processes and retains its copies according to its own policy. Update the consent and privacy copy if the provider or its retention terms change.
+Uploaded and generated images are not intentionally saved to an application database or persistent storage. The Colab FastAPI multipart handler may temporarily buffer uploaded files while processing, and the notebook's manual test cell writes a result under `/content`; Colab runtime storage is ephemeral. The API returns the generated PNG as private, non-cacheable data rather than exposing a result URL. Deleting a preview clears the browser copy but cannot erase data already temporarily buffered by a running Colab session. The user-facing privacy copy explains this processing flow.
 
-The result is a visual preview, not a guarantee of garment fit or size accuracy.
+The result is a visual preview, not a guarantee of garment fit or size accuracy. Keep the Colab runtime and tunnel running while using virtual try-on; stop them when finished.

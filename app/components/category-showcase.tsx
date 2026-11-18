@@ -67,7 +67,7 @@ function resetImagePosition(event: ReactPointerEvent<HTMLAnchorElement>) {
 
 export default function CategoryShowcase() {
   const sectionRef = useRef<HTMLElement>(null);
-  const prefersReducedMotion = useReducedMotion();
+  const prefersReducedMotion = useReducedMotion() ?? false;
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   useLayoutEffect(() => {

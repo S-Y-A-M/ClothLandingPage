@@ -77,7 +77,7 @@ export default function ProductDetail({ product }: { product: Product }) {
       </section>
       <footer className="site-footer">
         <div className="footer-top"><Link className="wordmark" href="/">ATELIER<span>.</span></Link><p>Designed with intention.<br /><i>Worn your way.</i></p><nav><Link href="/#collection">THE COLLECTION</Link><Link href="/#story">OUR STORY</Link><Link href="/#privacy">PRIVACY &amp; AI</Link></nav></div>
-        <div className="footer-bottom"><span>© ATELIER 2026</span><span>AI PREVIEWS PROCESSED PRIVATELY BY FASHN</span></div>
+        <div className="footer-bottom"><span>© ATELIER 2026</span><span>AI PREVIEWS GENERATED WITH FASHN VTON 1.5</span></div>
       </footer>
     </main>
   );
