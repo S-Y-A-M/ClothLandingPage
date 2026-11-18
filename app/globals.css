@@ -111,14 +111,14 @@ a { text-decoration: none; }
 .category-showcase__card:focus-visible { outline: 1px solid #f1ebdd; outline-offset: -5px; }
 .ambient-cursor { display: none; }
 .ambient-cursor__dot, .ambient-cursor__ring { position: fixed; top: 0; left: 0; z-index: 9999; pointer-events: none; opacity: 0; }
-.ambient-cursor__dot { width: 4px; height: 4px; border-radius: 50%; background: #f1ebdd; }
-.ambient-cursor__ring { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #f1ebdd94; border-radius: 50%; color: #111; transition: width .3s ease, height .3s ease, border-color .3s ease, background-color .3s ease; }
+.ambient-cursor__dot { width: 4px; height: 4px; border-radius: 50%; background: #ffd700; }
+.ambient-cursor__ring { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #ffd70094; border-radius: 50%; color: #111; transition: width .3s ease, height .3s ease, border-color .3s ease, background-color .3s ease; }
 .ambient-cursor__ring > span { opacity: 0; font-size: 7px; letter-spacing: .12em; transition: opacity .2s ease; }
 .ambient-cursor.is-visible .ambient-cursor__dot, .ambient-cursor.is-visible .ambient-cursor__ring { opacity: 1; }
-.ambient-cursor__ring.is-interactive { width: 46px; height: 46px; border-color: #f1ebdd; background: #f1ebdd19; }
-.ambient-cursor__ring.is-category { width: 76px; height: 76px; border-color: #f1ebdd; background: #f1ebdded; }
+.ambient-cursor__ring.is-interactive { width: 46px; height: 46px; border-color: #ffd700; background: #ffd70019; }
+.ambient-cursor__ring.is-category { width: 76px; height: 76px; border-color: #ffd700; background: #ffd700ed; }
 .ambient-cursor__ring.is-category > span { opacity: 1; }
-.ambient-cursor__ring.is-product { width: 56px; height: 56px; border-color: #f1ebdd; background: #f1ebdded; }
+.ambient-cursor__ring.is-product { width: 56px; height: 56px; border-color: #ffd700; background: #ffd700ed; }
 .ambient-cursor__ring.is-product > span { opacity: 1; }
 .collection-section { padding: 100px 8.3% 112px; }
 .section-heading { display: grid; grid-template-columns: 1fr auto auto; align-items: end; gap: 50px; margin-bottom: 39px; }
